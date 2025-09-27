@@ -1,0 +1,47 @@
+name: Run YOLO Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # 保留手动触发选项
+
+jobs:
+  run-yolo:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Create directories
+      run: |
+        mkdir -p weights
+        mkdir -p data
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run YOLO pipeline
+      run: |
+        python run_yolo.py --weights weights/best.pt --gdrive_id 11-HcwFwueby8S_QjaFEUucUw9odDrQpn
+      env:
+        SUPABASE_URL: "https://isguhazdbdzzxmtjhaqq.supabase.co"
+        SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzZ3VoYXpkYmR6enhtdGpoYXFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5NTQxMDIsImV4cCI6MjA3NDUzMDEwMn0.C3io-J6eLruy3o0QfX3Bah8TRViCR__YbOqVfFnjH-w"
+        N8N_WEBHOOK_URL: "https://noisseur.app.n8n.cloud/webhook/70eeb6c5-7c4d-483b-a262-5b99cc8b64a4"
+
+    - name: Upload prediction result
+      uses: actions/upload-artifact@v3
+      with:
+        name: prediction-result
+        path: prediction.jpg

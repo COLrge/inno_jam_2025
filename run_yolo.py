@@ -11,6 +11,10 @@ def download_from_gdrive(file_id: str, dest_path: str):
     session = requests.Session()
     response = session.get(URL, params={"id": file_id}, stream=True)
 
+    if response.status_code != 200:
+        print(f"❌ 无法下载文件，HTTP 状态码: {response.status_code}")
+        return
+
     def get_confirm_token(response):
         for key, value in response.cookies.items():
             if key.startswith("download_warning"):
@@ -21,12 +25,22 @@ def download_from_gdrive(file_id: str, dest_path: str):
     if token:
         response = session.get(URL, params={"id": file_id, "confirm": token}, stream=True)
 
-    with open(dest_path, "wb") as f:
-        for chunk in response.iter_content(32768):
-            if chunk:
-                f.write(chunk)
+    if response.status_code != 200:
+        print(f"❌ 下载确认阶段失败，HTTP 状态码: {response.status_code}")
+        return
 
-def main(weights_path, gdrive_file_id):
+    try:
+        with open(dest_path, "wb") as f:
+            for chunk in response.iter_content(32768):
+                if chunk:  # Filter out keep-alive new chunks
+                    f.write(chunk)
+        print(f"✅ 文件已成功下载到 {dest_path}")
+    except Exception as e:
+        print(f"❌ 下载文件时出错: {e}")
+        if os.path.exists(dest_path):
+            os.remove(dest_path)  # 删除部分下载的文件
+
+def main(weights_path, gdrive_file_id="11-HcwFwueby8S_QjaFEUucUw9odDrQpn"):
     if not os.path.exists(weights_path):
         print(f"模型 {weights_path} 不存在，从 Google Drive 下载...")
         os.makedirs(os.path.dirname(weights_path), exist_ok=True)
