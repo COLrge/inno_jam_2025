@@ -1,69 +1,53 @@
-import os
-import requests
-from datetime import datetime
-from PIL import Image
-from ultralytics import YOLO
-from supabase import create_client
 import argparse
+from ultralytics import YOLO
+from PIL import Image
+from supabase import create_client
+from datetime import datetime
+import requests
 
-def download_from_gdrive(file_id: str, dest_path: str):
-    URL = "https://docs.google.com/uc?export=download"
-    session = requests.Session()
-    response = session.get(URL, params={"id": file_id}, stream=True)
+# Supabase 配置
+SUPABASE_URL = "https://isguhazdbdzzxmtjhaqq.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzZ3VoYXpkYmR6enhtdGpoYXFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5NTQxMDIsImV4cCI6MjA3NDUzMDEwMn0.C3io-J6eLruy3o0QfX3Bah8TRViCR__YbOqVfFnjH-w"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    def get_confirm_token(response):
-        for key, value in response.cookies.items():
-            if key.startswith("download_warning"):
-                return value
-        return None
+# n8n Webhook
+N8N_URL = "https://noisseur.app.n8n.cloud/webhook/70eeb6c5-7c4d-483b-a262-5b99cc8b64a4"
 
-    token = get_confirm_token(response)
-    if token:
-        response = session.get(URL, params={"id": file_id, "confirm": token}, stream=True)
+def main(weights):
+    # 加载模型
+    print(f"✅ 使用模型: {weights}")
+    model = YOLO(weights)
 
-    with open(dest_path, "wb") as f:
-        for chunk in response.iter_content(32768):
-            if chunk:
-                f.write(chunk)
+    # 推理示例图片
+    image_path = "data/test.jpg"  # 你可以替换成实际图片路径
+    results = model(image_path)
 
-def main(weights_path, gdrive_file_id):
-    if not os.path.exists(weights_path):
-        print(f"模型 {weights_path} 不存在，从 Google Drive 下载...")
-        os.makedirs(os.path.dirname(weights_path), exist_ok=True)
-        download_from_gdrive(gdrive_file_id, weights_path)
-        print("✅ 下载完成。")
-
-    # 加载 YOLO 模型
-    model = YOLO(weights_path)
-    results = model("test.jpg")
     for r in results:
         im_array = r.plot()
         im = Image.fromarray(im_array[..., ::-1])
         im.save("prediction.jpg")
-    print("✅ 推理完成，prediction.jpg 已保存")
 
-    # Supabase 插入数据
-    supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    # 上传到 Supabase
+    time = datetime.utcnow().isoformat()
     data = {
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": time,
         "incident_type": "Pothole",
         "location": "Cyberjaya Persiaran Rimba",
-        "description": "Pothole detected via YOLO",
+        "description": "Pothole detected automatically",
         "reported_by": "Drone_A1",
-        "status": "Resolved",
+        "status": "Detected",
         "priority": "Medium"
     }
     response = supabase.table("incident_table").insert(data).execute()
-    print("✅ Supabase 插入响应：", response)
+    print("✅ Supabase response:", response)
 
-    # n8n Webhook
-    if "N8N_WEBHOOK_URL" in os.environ:
-        resp = requests.get(os.environ["N8N_WEBHOOK_URL"], params={"ping": "start"})
-        print("✅ n8n 响应：", resp.status_code)
+    # 通知 n8n
+    resp = requests.get(N8N_URL, params={"ping": "start"})
+    print("✅ n8n response:", resp.status_code, resp.text)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--weights", type=str, default="weights/best.pt", help="模型路径")
-    parser.add_argument("--gdrive_id", type=str, required=True, help="Google Drive 文件 ID")
     args = parser.parse_args()
-    main(args.weights, args.gdrive_id)
+    main(args.weights)

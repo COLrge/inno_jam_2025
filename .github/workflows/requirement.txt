@@ -1,0 +1,5 @@
+ultralytics
+supabase
+requests
+pillow
+gdown
