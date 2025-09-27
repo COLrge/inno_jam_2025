@@ -1,4 +1,4 @@
-ultralytics
-supabase
-requests
-pillow
+ultralytics>=8.0.0
+supabase>=1.0.0
+requests>=2.28.0
+Pillow>=9.0.0
