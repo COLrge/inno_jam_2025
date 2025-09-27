@@ -1,4 +1,4 @@
-name: Run YOLO Notebook
+name: Run YOLO via GDrive Model
 
 on:
   workflow_dispatch:
@@ -6,26 +6,31 @@ on:
 jobs:
   run-yolo:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
 
-      - name: Install dependencies
-        run: |
-          pip install ultralytics supabase requests pillow
+    - name: Install dependencies
+      run: |
+        pip install ultralytics supabase requests pillow
 
-      - name: Run notebook
-        run: |
-          pip install papermill jupyter nbconvert
-          papermill inno_hackathon.ipynb output.ipynb
-
-      - name: Upload executed notebook
-        uses: actions/upload-artifact@v4
-        with:
-          name: executed-notebook
-          path: output.ipynb
+    - name: Run YOLO script
+      run: |
+        python run_yolo.py \
+          --gdrive_id 11-HcwFwueby8S_QjaFEUucUw9odDrQpn
+      env:
+        SUPABASE_URL: "https://isguhazdbdzzxmtjhaqq.supabase.co"
+        SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzZ3VoYXpkYmR6enhtdGpoYXFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5NTQxMDIsImV4cCI6MjA3NDUzMDEwMn0.C3io-J6eLruy3o0QfX3Bah8TRViCR__YbOqVfFnjH-w"   # 你的 Supabase key
+        N8N_WEBHOOK_URL: "https://noisseur.app.n8n.cloud/webhook/70eeb6c5-7c4d-483b-a262-5b99cc8b64a4"
+    
+    - name: Upload prediction result
+      uses: actions/upload-artifact@v4
+      with:
+        name: prediction
+        path: prediction.jpg

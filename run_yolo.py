@@ -1,63 +1,69 @@
 import os
+import requests
 from datetime import datetime
 from PIL import Image
 from ultralytics import YOLO
 from supabase import create_client
-import requests
+import argparse
 
-# =======================
-# Supabase Setup (use secrets in GitHub Actions)
-# =======================
-url = os.environ["SUPABASE_URL"]
-key = os.environ["SUPABASE_KEY"]
-supabase = create_client(url, key)
+def download_from_gdrive(file_id: str, dest_path: str):
+    URL = "https://docs.google.com/uc?export=download"
+    session = requests.Session()
+    response = session.get(URL, params={"id": file_id}, stream=True)
 
-# =======================
-# Load YOLO model
-# =======================
-model_path = "weights/best.pt"
-if not os.path.exists(model_path):
-    raise FileNotFoundError(f"Model file not found: {model_path}")
+    def get_confirm_token(response):
+        for key, value in response.cookies.items():
+            if key.startswith("download_warning"):
+                return value
+        return None
 
-model = YOLO(model_path)
+    token = get_confirm_token(response)
+    if token:
+        response = session.get(URL, params={"id": file_id, "confirm": token}, stream=True)
 
-# =======================
-# Run inference
-# =======================
-img_path = "test.jpg"  # 放一张测试图片在仓库里
-results = model(img_path)
+    with open(dest_path, "wb") as f:
+        for chunk in response.iter_content(32768):
+            if chunk:
+                f.write(chunk)
 
-for r in results:
-    im_array = r.plot()  # numpy array
-    im = Image.fromarray(im_array[..., ::-1])  # 转 PIL
-    im.save("prediction.jpg")  # 保存结果
+def main(weights_path, gdrive_file_id):
+    if not os.path.exists(weights_path):
+        print(f"模型 {weights_path} 不存在，从 Google Drive 下载...")
+        os.makedirs(os.path.dirname(weights_path), exist_ok=True)
+        download_from_gdrive(gdrive_file_id, weights_path)
+        print("✅ 下载完成。")
 
-print("✅ Inference complete, saved as prediction.jpg")
+    # 加载 YOLO 模型
+    model = YOLO(weights_path)
+    results = model("test.jpg")
+    for r in results:
+        im_array = r.plot()
+        im = Image.fromarray(im_array[..., ::-1])
+        im.save("prediction.jpg")
+    print("✅ 推理完成，prediction.jpg 已保存")
 
-# =======================
-# Insert into Supabase
-# =======================
-time = datetime.now().isoformat()
+    # Supabase 插入数据
+    supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    data = {
+        "updated_at": datetime.now().isoformat(),
+        "incident_type": "Pothole",
+        "location": "Cyberjaya Persiaran Rimba",
+        "description": "Pothole detected via YOLO",
+        "reported_by": "Drone_A1",
+        "status": "Resolved",
+        "priority": "Medium"
+    }
+    response = supabase.table("incident_table").insert(data).execute()
+    print("✅ Supabase 插入响应：", response)
 
-data = {
-    "updated_at": time,
-    "incident_type": "Pothole",
-    "location": "Cyberjaya Persiaran Rimba",
-    "description": "Pothole detected via YOLO",
-    "reported_by": "Drone_A1",
-    "status": "Resolved",
-    "priority": "Medium"
-}
+    # n8n Webhook
+    if "N8N_WEBHOOK_URL" in os.environ:
+        resp = requests.get(os.environ["N8N_WEBHOOK_URL"], params={"ping": "start"})
+        print("✅ n8n 响应：", resp.status_code)
 
-response = supabase.table("incident_table").insert(data).execute()
-print("✅ Supabase insert response:", response)
-
-# =======================
-# Trigger n8n webhook
-# =======================
-n8n_url = os.environ.get("N8N_WEBHOOK_URL")
-if n8n_url:
-    resp = requests.get(n8n_url, params={"ping": "start"})
-    print("✅ n8n webhook response:", resp.status_code, resp.text)
-else:
-    print("⚠️ No N8N webhook URL set, skipped.")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--weights", type=str, default="weights/best.pt", help="模型路径")
+    parser.add_argument("--gdrive_id", type=str, required=True, help="Google Drive 文件 ID")
+    args = parser.parse_args()
+    main(args.weights, args.gdrive_id)
